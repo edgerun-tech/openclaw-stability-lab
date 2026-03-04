@@ -1,0 +1,29 @@
+name: control-plane-tick
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */4 * * *'
+
+jobs:
+  ingest-and-render:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Init DB
+        run: python3 orchestrator/control_plane.py init-db
+      - name: Ingest open issues (sample)
+        run: python3 orchestrator/control_plane.py ingest-openclaw --limit 500
+      - name: Requeue expired leases
+        run: python3 orchestrator/control_plane.py requeue-expired
+      - name: Render board
+        run: python3 orchestrator/control_plane.py render-board
+      - name: Commit board/state updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add orchestrator/state/controlplane.db docs/findings/control-plane-board.md
+          git commit -m "chore(control-plane): refresh board/state" || exit 0
+          git push

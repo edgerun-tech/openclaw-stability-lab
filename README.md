@@ -22,3 +22,8 @@ Community compute harness for validating OpenClaw issues and regressions without
 - Uses pinned harness commands and report schema
 
 See `CONTRIBUTING.md` and `profiles/`.
+
+Control plane docs:
+
+- `orchestrator/ARCHITECTURE.md`
+- `docs/CODESPACE_CONTROL_PLANE.md`
