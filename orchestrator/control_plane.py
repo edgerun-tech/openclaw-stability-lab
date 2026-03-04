@@ -271,8 +271,7 @@ def render_board(conn: sqlite3.Connection) -> None:
     for r in latest:
         html.append(f"<tr><td>{r['issue_number']}</td><td>{r['profile']}</td><td>{r['status']}</td><td>{r['verdict'] or ''}</td><td>{r['runner_id'] or ''}</td><td>{(r['commit_sha'] or '')[:10]}</td><td>{r['created_at'] or ''}</td><td>{r['report_path'] or ''}</td><td>{r['logs_path'] or ''}</td></tr>")
     html += ["</tbody></table>", "<p><a href='control-plane-board.md'>Markdown board</a> · <a href='issue-crossref.md'>Issue cross-reference</a></p>", "</body></html>"]
-    html_path.write_text("
-".join(html), encoding="utf8")
+    html_path.write_text("\n".join(html), encoding="utf8")
     print(f"wrote {BOARD_PATH} and {html_path}")
 
 
