@@ -7,6 +7,7 @@ import sqlite3
 import subprocess
 import sys
 import uuid
+import hashlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,14 @@ STATE_DIR = ROOT / "orchestrator" / "state"
 DB_PATH = STATE_DIR / "controlplane.db"
 BOARD_PATH = ROOT / "docs" / "findings" / "control-plane-board.md"
 
+
+
+
+def worker_alias(worker_id: str) -> str:
+    adjectives = ["amber","brisk","calm","crisp","daring","ember","gentle","keen","lucky","mellow","nova","quiet","rapid","solar","tidal","vivid"]
+    animals = ["otter","falcon","lynx","heron","fox","orca","kite","panda","wolf","finch","badger","ibis","raven","tiger","koala","yak"]
+    h = hashlib.sha1(worker_id.encode("utf8")).digest()
+    return f"{adjectives[h[0] % len(adjectives)]}-{animals[h[1] % len(animals)]}-{h[2] % 100:02d}"
 
 def now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
@@ -241,12 +250,12 @@ def render_board(conn: sqlite3.Connection) -> None:
 
     lines += ["", "## Workers", "", "| Worker | Status | Last Seen | Profiles |", "|---|---|---|---|"]
     for w in workers:
-        lines.append(f"| {w['id']} | {w['status']} | {w['last_seen']} | {w['profiles_json']} |")
+        lines.append(f"| {worker_alias(w['id'])} | {w['status']} | {w['last_seen']} | {w['profiles_json']} |")
 
     lines += ["", "## Recent results", "", "| Issue | Profile | Job Status | Verdict | Runner | Commit | When | Report | Logs |", "|---:|---|---|---|---|---|---|---|---|"]
     for r in latest:
         lines.append(
-            f"| {r['issue_number']} | {r['profile']} | {r['status']} | {r['verdict'] or ''} | {r['runner_id'] or ''} | {(r['commit_sha'] or '')[:10]} | {r['created_at'] or ''} | {r['report_path'] or ''} | {r['logs_path'] or ''} |"
+            f"| {r['issue_number']} | {r['profile']} | {r['status']} | {r['verdict'] or ''} | {worker_alias(r['runner_id'] or 'unknown')} | {(r['commit_sha'] or '')[:10]} | {r['created_at'] or ''} | {r['report_path'] or ''} | {r['logs_path'] or ''} |"
         )
 
     BOARD_PATH.write_text("\n".join(lines) + "\n", encoding="utf8")
@@ -266,10 +275,10 @@ def render_board(conn: sqlite3.Connection) -> None:
         "<table><thead><tr><th>Worker</th><th>Status</th><th>Last Seen</th><th>Profiles</th></tr></thead><tbody>",
     ]
     for w in workers:
-        html.append(f"<tr><td>{w['id']}</td><td>{w['status']}</td><td>{w['last_seen']}</td><td><code>{w['profiles_json']}</code></td></tr>")
+        html.append(f"<tr><td>{worker_alias(w['id'])}</td><td>{w['status']}</td><td>{w['last_seen']}</td><td><code>{w['profiles_json']}</code></td></tr>")
     html += ["</tbody></table>", "<h2>Recent Results</h2>", "<table><thead><tr><th>Issue</th><th>Profile</th><th>Status</th><th>Verdict</th><th>Runner</th><th>Commit</th><th>When</th><th>Report</th><th>Logs</th></tr></thead><tbody>"]
     for r in latest:
-        html.append(f"<tr><td>{r['issue_number']}</td><td>{r['profile']}</td><td>{r['status']}</td><td>{r['verdict'] or ''}</td><td>{r['runner_id'] or ''}</td><td>{(r['commit_sha'] or '')[:10]}</td><td>{r['created_at'] or ''}</td><td>{r['report_path'] or ''}</td><td>{r['logs_path'] or ''}</td></tr>")
+        html.append(f"<tr><td>{r['issue_number']}</td><td>{r['profile']}</td><td>{r['status']}</td><td>{r['verdict'] or ''}</td><td>{worker_alias(r['runner_id'] or 'unknown')}</td><td>{(r['commit_sha'] or '')[:10]}</td><td>{r['created_at'] or ''}</td><td>{r['report_path'] or ''}</td><td>{r['logs_path'] or ''}</td></tr>")
     html += ["</tbody></table>", "<p><a href='control-plane-board.md'>Markdown board</a> · <a href='issue-crossref.md'>Issue cross-reference</a></p>", "</body></html>"]
     html_path.write_text("\n".join(html), encoding="utf8")
     print(f"wrote {BOARD_PATH} and {html_path}")
