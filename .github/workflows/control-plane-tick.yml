@@ -20,10 +20,12 @@ jobs:
         run: python3 orchestrator/control_plane.py requeue-expired
       - name: Render board
         run: python3 orchestrator/control_plane.py render-board
+      - name: Build issue cross-reference
+        run: python3 scripts/build-crossref.py
       - name: Commit board/state updates
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add orchestrator/state/controlplane.db docs/findings/control-plane-board.md
+          git add orchestrator/state/controlplane.db docs/findings/control-plane-board.md docs/findings/issue-crossref.md
           git commit -m "chore(control-plane): refresh board/state" || exit 0
           git push
