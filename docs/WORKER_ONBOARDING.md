@@ -30,12 +30,27 @@ pnpm install --frozen-lockfile || pnpm install
 
 ## 3) Register worker + run loop
 
+### Local-only mode (embedded control plane)
+
 ```bash
 cd ../openclaw-stability-lab
 
 export WORKER_ID=my-worker-001
 export WORKER_PROFILES=channel-delivery,gateway-lifecycle,protocol-transport
 export CORE_REPO=$(realpath ../openclaw)
+
+./scripts/worker-loop.sh
+```
+
+### Remote control-plane mode (recommended)
+
+```bash
+cd ../openclaw-stability-lab
+
+export WORKER_ID=my-worker-001
+export WORKER_PROFILES=channel-delivery,gateway-lifecycle,protocol-transport
+export CORE_REPO=$(realpath ../openclaw)
+export CONTROL_PLANE_URL=https://openclaw.edgerun.tech/api
 
 ./scripts/worker-loop.sh
 ```
