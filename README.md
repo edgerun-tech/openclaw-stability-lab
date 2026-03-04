@@ -30,6 +30,7 @@ Control plane docs:
 - `docs/WORKER_ONBOARDING.md`
 - `docs/EVIDENCE_POLICY.md`
 - `docs/PR_INTELLIGENCE_V1.md`
+- `docs/CODE_ANALYSIS_PIPELINE.md`
 - `docs/findings/issue-crossref.md`
 
 Live artifacts (committed by control-plane tick):
@@ -37,3 +38,4 @@ Live artifacts (committed by control-plane tick):
 - `docs/findings/control-plane-board.md`
 - `docs/findings/issue-crossref.md`
 - `docs/findings/pr-intel-board.md`
+- `docs/findings/code-analysis-summary.md`
