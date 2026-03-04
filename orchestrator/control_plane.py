@@ -14,8 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = ROOT / "orchestrator" / "state"
 DB_PATH = STATE_DIR / "controlplane.db"
 BOARD_PATH = ROOT / "docs" / "findings" / "control-plane-board.md"
-
-
+PR_INTEL_PATH = ROOT / "orchestrator" / "state" / "pr-intel.json"
 
 
 def worker_alias(worker_id: str) -> str:
@@ -35,6 +34,15 @@ def display_path(path: str | None) -> str:
 
 def now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def load_pr_intel() -> dict:
+    if PR_INTEL_PATH.exists():
+        try:
+            return json.loads(PR_INTEL_PATH.read_text(encoding="utf8"))
+        except Exception:
+            return {}
+    return {}
 
 
 def connect() -> sqlite3.Connection:
@@ -230,6 +238,7 @@ def requeue_expired(conn: sqlite3.Connection) -> int:
 
 def render_board(conn: sqlite3.Connection) -> None:
     BOARD_PATH.parent.mkdir(parents=True, exist_ok=True)
+    pr_intel = load_pr_intel()
     counts = conn.execute("SELECT status, count(*) c FROM jobs GROUP BY status").fetchall()
     by_status = {r["status"]: r["c"] for r in counts}
     workers = conn.execute("SELECT id, status, last_seen, profiles_json FROM workers ORDER BY last_seen DESC LIMIT 50").fetchall()
@@ -267,6 +276,21 @@ def render_board(conn: sqlite3.Connection) -> None:
             f"| {r['issue_number']} | {r['profile']} | {r['status']} | {r['verdict'] or ''} | {worker_alias(r['runner_id'] or 'unknown')} | {(r['commit_sha'] or '')[:10]} | {r['created_at'] or ''} | {display_path(r['report_path'])} | {display_path(r['logs_path'])} |"
         )
 
+    lines += ["", "## PR intelligence", ""]
+    if pr_intel:
+        lines.append(f"Source repo: `{pr_intel.get('repo', 'unknown')}`")
+        lines.append(f"Open PRs: **{pr_intel.get('openPulls', 0)}** | Open issues: **{pr_intel.get('openIssues', 0)}**")
+        lines.append("")
+        lines.append("### Top campaigns")
+        lines.append("")
+        lines.append("| Campaign | Category | Tier | Policy | Confidence | Issues |")
+        lines.append("|---|---|---|---|---:|---|")
+        for c in pr_intel.get("campaigns", [])[:10]:
+            issues = ", ".join(f"#{n}" for n in c.get("issues", []))
+            lines.append(f"| {c.get('campaignId','')} | {c.get('category','')} | {c.get('tier','')} | {c.get('policy','')} | {c.get('confidence',0)} | {issues} |")
+    else:
+        lines.append("No PR intelligence artifact found yet.")
+
     BOARD_PATH.write_text("\n".join(lines) + "\n", encoding="utf8")
 
     # Also emit a lightweight HTML dashboard so root URL isn't a directory listing.
@@ -289,7 +313,25 @@ def render_board(conn: sqlite3.Connection) -> None:
     html += ["</tbody></table></div>", "<h2 class='text-xl font-semibold mb-2'>Recent Results</h2>", "<div class='overflow-x-auto'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Issue</th><th class='p-2 text-left'>Profile</th><th class='p-2 text-left'>Status</th><th class='p-2 text-left'>Verdict</th><th class='p-2 text-left'>Runner</th><th class='p-2 text-left'>Commit</th><th class='p-2 text-left'>When</th><th class='p-2 text-left'>Report</th><th class='p-2 text-left'>Logs</th></tr></thead><tbody>"]
     for r in latest:
         html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{r['issue_number']}</td><td class='p-2'>{r['profile']}</td><td class='p-2'>{r['status']}</td><td class='p-2'>{r['verdict'] or ''}</td><td class='p-2'>{worker_alias(r['runner_id'] or 'unknown')}</td><td class='p-2'>{(r['commit_sha'] or '')[:10]}</td><td class='p-2'>{r['created_at'] or ''}</td><td class='p-2'>{display_path(r['report_path'])}</td><td class='p-2'>{display_path(r['logs_path'])}</td></tr>")
-    html += ["</tbody></table></div>", "<p class='mt-6 text-zinc-400'><a class='underline' href='control-plane-board.md'>Markdown board</a> · <a class='underline' href='issue-crossref.md'>Issue cross-reference</a></p>", "</div></body></html>"]
+    html += ["</tbody></table></div>"]
+
+    html += ["<h2 class='text-xl font-semibold mt-8 mb-2'>PR Intelligence</h2>"]
+    if pr_intel:
+        html += [
+            "<div class='grid grid-cols-1 md:grid-cols-2 gap-3 mb-4'>",
+            f"<div class='rounded-xl border border-zinc-800 bg-zinc-900 p-3'><div class='text-zinc-400 text-xs uppercase'>Repo</div><div class='text-base font-semibold'>{pr_intel.get('repo','unknown')}</div></div>",
+            f"<div class='rounded-xl border border-zinc-800 bg-zinc-900 p-3'><div class='text-zinc-400 text-xs uppercase'>Open PRs / Open Issues</div><div class='text-base font-semibold'>{pr_intel.get('openPulls',0)} / {pr_intel.get('openIssues',0)}</div></div>",
+            "</div>",
+            "<div class='overflow-x-auto'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Campaign</th><th class='p-2 text-left'>Category</th><th class='p-2 text-left'>Tier</th><th class='p-2 text-left'>Policy</th><th class='p-2 text-left'>Confidence</th><th class='p-2 text-left'>Issues</th></tr></thead><tbody>",
+        ]
+        for c in pr_intel.get("campaigns", [])[:10]:
+            issues = ", ".join(f"#{n}" for n in c.get("issues", []))
+            html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{c.get('campaignId','')}</td><td class='p-2'>{c.get('category','')}</td><td class='p-2'>{c.get('tier','')}</td><td class='p-2'>{c.get('policy','')}</td><td class='p-2'>{c.get('confidence',0)}</td><td class='p-2'>{issues}</td></tr>")
+        html += ["</tbody></table></div>"]
+    else:
+        html += ["<p class='text-zinc-400'>No PR intelligence artifact found yet.</p>"]
+
+    html += ["<p class='mt-6 text-zinc-400'><a class='underline' href='control-plane-board.md'>Markdown board</a> · <a class='underline' href='issue-crossref.md'>Issue cross-reference</a> · <a class='underline' href='pr-intel-board.md'>PR intel board</a></p>", "</div></body></html>"]
     html_path.write_text("\n".join(html), encoding="utf8")
     print(f"wrote {BOARD_PATH} and {html_path}")
 

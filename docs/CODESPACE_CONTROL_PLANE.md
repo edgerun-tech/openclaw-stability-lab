@@ -7,6 +7,8 @@ Run the orchestrator in GitHub Codespaces with persistent storage.
 ```bash
 python3 orchestrator/control_plane.py init-db
 python3 orchestrator/control_plane.py ingest-openclaw --limit 500
+python3 orchestrator/pr_intel.py --repo openclaw/openclaw --out orchestrator/state/pr-intel.json
+python3 scripts/render-pr-intel-board.py
 python3 orchestrator/control_plane.py render-board
 ```
 
@@ -23,6 +25,8 @@ CORE_REPO=/workspaces/openclaw \
 
 ```bash
 python3 orchestrator/control_plane.py requeue-expired
+python3 orchestrator/pr_intel.py --repo openclaw/openclaw --out orchestrator/state/pr-intel.json
+python3 scripts/render-pr-intel-board.py
 python3 orchestrator/control_plane.py render-board
 ```
 

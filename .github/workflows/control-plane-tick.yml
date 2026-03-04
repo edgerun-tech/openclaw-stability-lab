@@ -20,12 +20,16 @@ jobs:
         run: python3 orchestrator/control_plane.py requeue-expired
       - name: Render board
         run: python3 orchestrator/control_plane.py render-board
+      - name: Build PR intelligence
+        run: python3 orchestrator/pr_intel.py --repo openclaw/openclaw --out orchestrator/state/pr-intel.json
+      - name: Build PR intelligence board
+        run: python3 scripts/render-pr-intel-board.py
       - name: Build issue cross-reference
         run: python3 scripts/build-crossref.py
       - name: Commit board/state updates
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add orchestrator/state/controlplane.db docs/findings/control-plane-board.md docs/findings/issue-crossref.md
+          git add orchestrator/state/controlplane.db docs/findings/control-plane-board.md docs/findings/index.html docs/findings/issue-crossref.md docs/findings/pr-intel-board.md
           git commit -m "chore(control-plane): refresh board/state" || exit 0
           git push
