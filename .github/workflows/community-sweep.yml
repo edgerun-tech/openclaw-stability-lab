@@ -1,0 +1,59 @@
+name: community-sweep
+
+on:
+  workflow_dispatch:
+    inputs:
+      shardCount:
+        description: Total shards
+        required: true
+        default: '4'
+      shardIndex:
+        description: Shard index (0-based)
+        required: true
+        default: '0'
+      openclawRef:
+        description: openclaw ref (branch/tag/SHA)
+        required: true
+        default: 'main'
+
+jobs:
+  run-sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare work queue
+        run: |
+          mkdir -p config
+          python3 scripts/gen-work-queue.py
+          python3 scripts/split-work-queue.py --shards ${{ inputs.shardCount }} --index ${{ inputs.shardIndex }} --output config/issues.txt
+      - name: Clone OpenClaw
+        run: |
+          git clone https://github.com/openclaw/openclaw.git /tmp/openclaw
+          cd /tmp/openclaw
+          git fetch origin
+          git checkout ${{ inputs.openclawRef }} || git checkout origin/${{ inputs.openclawRef }}
+      - name: Setup Node/pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+          cache-dependency-path: /tmp/openclaw/pnpm-lock.yaml
+      - name: Install deps
+        run: |
+          cd /tmp/openclaw
+          pnpm install --frozen-lockfile || pnpm install
+      - name: Run shard
+        run: |
+          mkdir -p reports
+          while read -r issue profile; do
+            [ -z "$issue" ] && continue
+            ./scripts/run-profile.sh "$profile" --issue "$issue" --repo /tmp/openclaw || true
+          done < config/issues.txt
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: sweep-reports-${{ inputs.shardIndex }}
+          path: reports/
