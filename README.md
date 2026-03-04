@@ -36,3 +36,4 @@ Live artifacts (committed by control-plane tick):
 
 - `docs/findings/control-plane-board.md`
 - `docs/findings/issue-crossref.md`
+- `docs/findings/pr-intel-board.md`
