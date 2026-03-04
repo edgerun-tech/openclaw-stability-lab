@@ -104,6 +104,8 @@ def classify_profile(title: str, body: str) -> str:
         return "channel-delivery"
     if any(k in t for k in ["gateway", "restart", "disconnect", "stale-socket", "launchctl"]):
         return "gateway-lifecycle"
+    if any(k in t for k in ['pull request','pr ','checks-']):
+        return 'pr-materialization'
     return "protocol-transport"
 
 
@@ -282,7 +284,7 @@ def render_board(conn: sqlite3.Connection) -> None:
         f"<p class='text-zinc-400 mb-4'><b>Generated:</b> {generated}</p>",
         "<div class='grid grid-cols-2 md:grid-cols-5 gap-3 mb-8'>" + "".join([f"<div class='rounded-xl border border-zinc-800 bg-zinc-900 p-3'><div class='text-zinc-400 text-xs uppercase'>{k}</div><div class='text-2xl font-semibold'>{by_status.get(k,0)}</div></div>" for k in ["queued","running","done","failed","needs-info"]]) + "</div>",
         "<h2 class='text-xl font-semibold mb-2'>Workers</h2>",
-        "<div class='overflow-x-auto mb-8'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Worker</th><th class='p-2 text-left'>Status</th><th class='p-2 text-left'>Last Seen</th><th class='p-2 text-left'>Profiles</th></tr></thead><tbody>",
+        "<div class='overflow-x-auto mb-8'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Worker</th><th class='p-2 text-left'>Status</th><th class='p-2 text-left'>Running</th><th class='p-2 text-left'>Results(1h)</th><th class='p-2 text-left'>Last Seen</th><th class='p-2 text-left'>Profiles</th></tr></thead><tbody>",
     ]
     for w in workers:
         html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{worker_alias(w['id'])}</td><td class='p-2'>{w['status']}</td><td class='p-2'>{w['last_seen']}</td><td class='p-2'><code>{w['profiles_json']}</code></td></tr>")

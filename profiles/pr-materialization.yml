@@ -1,0 +1,3 @@
+name: pr-materialization
+commands:
+  - echo "Use scripts/run-pr-materialization.sh for PR jobs"
