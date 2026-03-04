@@ -16,6 +16,7 @@ DB_PATH = STATE_DIR / "controlplane.db"
 BOARD_PATH = ROOT / "docs" / "findings" / "control-plane-board.md"
 PR_INTEL_PATH = ROOT / "orchestrator" / "state" / "pr-intel.json"
 CODE_ANALYSIS_PATH = ROOT / "orchestrator" / "state" / "code-analysis.json"
+PR_BUILD_PATH = ROOT / "orchestrator" / "state" / "pr-build-report.json"
 
 
 def worker_alias(worker_id: str) -> str:
@@ -271,6 +272,7 @@ def render_board(conn: sqlite3.Connection) -> None:
     BOARD_PATH.parent.mkdir(parents=True, exist_ok=True)
     pr_intel = load_json(PR_INTEL_PATH)
     code_analysis = load_json(CODE_ANALYSIS_PATH)
+    pr_build = load_json(PR_BUILD_PATH)
     counts = conn.execute("SELECT status, count(*) c FROM jobs GROUP BY status").fetchall()
     by_status = {r["status"]: r["c"] for r in counts}
     workers = conn.execute("SELECT id, status, last_seen, profiles_json FROM workers ORDER BY last_seen DESC LIMIT 50").fetchall()
@@ -355,6 +357,19 @@ def render_board(conn: sqlite3.Connection) -> None:
     else:
         lines.append("No PR intelligence artifact found yet.")
 
+    lines += ["", "## PR build + static checks", ""]
+    if pr_build:
+        lines.append(f"Repo: `{pr_build.get('repo','unknown')}`")
+        lines.append("")
+        lines.append("| PR | Files | Languages | Check Mode |")
+        lines.append("|---:|---:|---|---|")
+        for pr in pr_build.get("pullRequests", [])[:12]:
+            langs = pr.get("languageBreakdown", {})
+            lang_text = ", ".join(f"{k}:{v}" for k, v in sorted(langs.items(), key=lambda x: x[1], reverse=True)[:4])
+            lines.append(f"| {pr.get('number','')} | {pr.get('changedFiles',0)} | {lang_text} | {pr.get('checks',{}).get('mode','diff-only')} |")
+    else:
+        lines.append("No PR build/check artifact found yet.")
+
     lines += ["", "## Code analysis", ""]
     if code_analysis:
         lines.append(f"Repo: `{code_analysis.get('repo','unknown')}`")
@@ -411,6 +426,20 @@ def render_board(conn: sqlite3.Connection) -> None:
     else:
         html += ["<p class='text-zinc-400'>No PR intelligence artifact found yet.</p>"]
 
+    html += ["<h2 class='text-xl font-semibold mt-8 mb-2'>PR Build + Static Checks</h2>"]
+    if pr_build:
+        html += [
+            f"<p class='text-zinc-300 mb-3'>Repo: <code>{pr_build.get('repo','unknown')}</code></p>",
+            "<div class='overflow-x-auto mb-6'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>PR</th><th class='p-2 text-left'>Files</th><th class='p-2 text-left'>Languages</th><th class='p-2 text-left'>Check Mode</th></tr></thead><tbody>",
+        ]
+        for pr in pr_build.get("pullRequests", [])[:12]:
+            langs = pr.get("languageBreakdown", {})
+            lang_text = ", ".join(f"{k}:{v}" for k, v in sorted(langs.items(), key=lambda x: x[1], reverse=True)[:4])
+            html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>#{pr.get('number','')}</td><td class='p-2'>{pr.get('changedFiles',0)}</td><td class='p-2'>{lang_text}</td><td class='p-2'>{pr.get('checks',{}).get('mode','diff-only')}</td></tr>")
+        html += ["</tbody></table></div>"]
+    else:
+        html += ["<p class='text-zinc-400'>No PR build/check artifact found yet.</p>"]
+
     html += ["<h2 class='text-xl font-semibold mt-8 mb-2'>Code Analysis</h2>"]
     if code_analysis:
         counts = code_analysis.get("counts", {})
@@ -424,7 +453,7 @@ def render_board(conn: sqlite3.Connection) -> None:
     else:
         html += ["<p class='text-zinc-400'>No code analysis artifact found yet.</p>"]
 
-    html += ["<p class='mt-6 text-zinc-400'><a class='underline' href='control-plane-board.md'>Markdown board</a> · <a class='underline' href='issue-crossref.md'>Issue cross-reference</a> · <a class='underline' href='pr-intel-board.md'>PR intel board</a> · <a class='underline' href='code-analysis-summary.md'>Code analysis summary</a></p>", "</div></body></html>"]
+    html += ["<p class='mt-6 text-zinc-400'><a class='underline' href='control-plane-board.md'>Markdown board</a> · <a class='underline' href='issue-crossref.md'>Issue cross-reference</a> · <a class='underline' href='pr-intel-board.md'>PR intel board</a> · <a class='underline' href='pr-build-report.md'>PR build report</a> · <a class='underline' href='code-analysis-summary.md'>Code analysis summary</a></p>", "</div></body></html>"]
     html_path.write_text("\n".join(html), encoding="utf8")
     print(f"wrote {BOARD_PATH} and {html_path}")
 
