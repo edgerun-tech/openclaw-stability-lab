@@ -24,6 +24,15 @@ def worker_alias(worker_id: str) -> str:
     h = hashlib.sha1(worker_id.encode("utf8")).digest()
     return f"{adjectives[h[0] % len(adjectives)]}-{animals[h[1] % len(animals)]}-{h[2] % 100:02d}"
 
+def display_path(path: str | None) -> str:
+    if not path:
+        return ""
+    # avoid leaking host filesystem layout/IP-like identifiers
+    parts = str(path).strip().split("/")
+    if len(parts) >= 2:
+        return "/".join(parts[-2:])
+    return parts[-1]
+
 def now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
@@ -255,7 +264,7 @@ def render_board(conn: sqlite3.Connection) -> None:
     lines += ["", "## Recent results", "", "| Issue | Profile | Job Status | Verdict | Runner | Commit | When | Report | Logs |", "|---:|---|---|---|---|---|---|---|---|"]
     for r in latest:
         lines.append(
-            f"| {r['issue_number']} | {r['profile']} | {r['status']} | {r['verdict'] or ''} | {worker_alias(r['runner_id'] or 'unknown')} | {(r['commit_sha'] or '')[:10]} | {r['created_at'] or ''} | {r['report_path'] or ''} | {r['logs_path'] or ''} |"
+            f"| {r['issue_number']} | {r['profile']} | {r['status']} | {r['verdict'] or ''} | {worker_alias(r['runner_id'] or 'unknown')} | {(r['commit_sha'] or '')[:10]} | {r['created_at'] or ''} | {display_path(r['report_path'])} | {display_path(r['logs_path'])} |"
         )
 
     BOARD_PATH.write_text("\n".join(lines) + "\n", encoding="utf8")
@@ -264,22 +273,23 @@ def render_board(conn: sqlite3.Connection) -> None:
     html_path = BOARD_PATH.parent / "index.html"
     html = [
         "<!doctype html>",
-        "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>",
+        "<html class='dark'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>",
         "<title>OpenClaw Stability Dashboard</title>",
-        "<style>body{font-family:system-ui,Arial,sans-serif;max-width:1200px;margin:2rem auto;padding:0 1rem;} table{border-collapse:collapse;width:100%;font-size:14px;} th,td{border:1px solid #ddd;padding:.4rem;vertical-align:top;} th{background:#f5f5f5;text-align:left;} .cards{display:flex;gap:.75rem;flex-wrap:wrap;margin:1rem 0;} .card{border:1px solid #ddd;border-radius:8px;padding:.6rem .9rem;min-width:120px;} code{background:#f6f8fa;padding:.1rem .3rem;border-radius:4px;}</style>",
-        "</head><body>",
-        "<h1>OpenClaw Stability Dashboard</h1>",
-        f"<p><b>Generated:</b> {generated}</p>",
-        "<div class='cards'>" + "".join([f"<div class='card'><b>{k}</b><div>{by_status.get(k,0)}</div></div>" for k in ["queued","running","done","failed","needs-info"]]) + "</div>",
-        "<h2>Workers</h2>",
-        "<table><thead><tr><th>Worker</th><th>Status</th><th>Last Seen</th><th>Profiles</th></tr></thead><tbody>",
+        "<script src='https://cdn.tailwindcss.com'></script>",
+        "</head><body class='bg-zinc-950 text-zinc-100'>",
+        "<div class='max-w-7xl mx-auto px-4 py-8'>",
+        "<h1 class='text-2xl font-bold mb-2'>OpenClaw Stability Dashboard</h1>",
+        f"<p class='text-zinc-400 mb-4'><b>Generated:</b> {generated}</p>",
+        "<div class='grid grid-cols-2 md:grid-cols-5 gap-3 mb-8'>" + "".join([f"<div class='rounded-xl border border-zinc-800 bg-zinc-900 p-3'><div class='text-zinc-400 text-xs uppercase'>{k}</div><div class='text-2xl font-semibold'>{by_status.get(k,0)}</div></div>" for k in ["queued","running","done","failed","needs-info"]]) + "</div>",
+        "<h2 class='text-xl font-semibold mb-2'>Workers</h2>",
+        "<div class='overflow-x-auto mb-8'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Worker</th><th class='p-2 text-left'>Status</th><th class='p-2 text-left'>Last Seen</th><th class='p-2 text-left'>Profiles</th></tr></thead><tbody>",
     ]
     for w in workers:
-        html.append(f"<tr><td>{worker_alias(w['id'])}</td><td>{w['status']}</td><td>{w['last_seen']}</td><td><code>{w['profiles_json']}</code></td></tr>")
-    html += ["</tbody></table>", "<h2>Recent Results</h2>", "<table><thead><tr><th>Issue</th><th>Profile</th><th>Status</th><th>Verdict</th><th>Runner</th><th>Commit</th><th>When</th><th>Report</th><th>Logs</th></tr></thead><tbody>"]
+        html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{worker_alias(w['id'])}</td><td class='p-2'>{w['status']}</td><td class='p-2'>{w['last_seen']}</td><td class='p-2'><code>{w['profiles_json']}</code></td></tr>")
+    html += ["</tbody></table></div>", "<h2 class='text-xl font-semibold mb-2'>Recent Results</h2>", "<div class='overflow-x-auto'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Issue</th><th class='p-2 text-left'>Profile</th><th class='p-2 text-left'>Status</th><th class='p-2 text-left'>Verdict</th><th class='p-2 text-left'>Runner</th><th class='p-2 text-left'>Commit</th><th class='p-2 text-left'>When</th><th class='p-2 text-left'>Report</th><th class='p-2 text-left'>Logs</th></tr></thead><tbody>"]
     for r in latest:
-        html.append(f"<tr><td>{r['issue_number']}</td><td>{r['profile']}</td><td>{r['status']}</td><td>{r['verdict'] or ''}</td><td>{worker_alias(r['runner_id'] or 'unknown')}</td><td>{(r['commit_sha'] or '')[:10]}</td><td>{r['created_at'] or ''}</td><td>{r['report_path'] or ''}</td><td>{r['logs_path'] or ''}</td></tr>")
-    html += ["</tbody></table>", "<p><a href='control-plane-board.md'>Markdown board</a> · <a href='issue-crossref.md'>Issue cross-reference</a></p>", "</body></html>"]
+        html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{r['issue_number']}</td><td class='p-2'>{r['profile']}</td><td class='p-2'>{r['status']}</td><td class='p-2'>{r['verdict'] or ''}</td><td class='p-2'>{worker_alias(r['runner_id'] or 'unknown')}</td><td class='p-2'>{(r['commit_sha'] or '')[:10]}</td><td class='p-2'>{r['created_at'] or ''}</td><td class='p-2'>{display_path(r['report_path'])}</td><td class='p-2'>{display_path(r['logs_path'])}</td></tr>")
+    html += ["</tbody></table></div>", "<p class='mt-6 text-zinc-400'><a class='underline' href='control-plane-board.md'>Markdown board</a> · <a class='underline' href='issue-crossref.md'>Issue cross-reference</a></p>", "</div></body></html>"]
     html_path.write_text("\n".join(html), encoding="utf8")
     print(f"wrote {BOARD_PATH} and {html_path}")
 
