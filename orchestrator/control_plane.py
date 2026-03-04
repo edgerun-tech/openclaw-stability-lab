@@ -15,6 +15,7 @@ STATE_DIR = ROOT / "orchestrator" / "state"
 DB_PATH = STATE_DIR / "controlplane.db"
 BOARD_PATH = ROOT / "docs" / "findings" / "control-plane-board.md"
 PR_INTEL_PATH = ROOT / "orchestrator" / "state" / "pr-intel.json"
+CODE_ANALYSIS_PATH = ROOT / "orchestrator" / "state" / "code-analysis.json"
 
 
 def worker_alias(worker_id: str) -> str:
@@ -36,13 +37,26 @@ def now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
 
 
-def load_pr_intel() -> dict:
-    if PR_INTEL_PATH.exists():
+def load_json(path: Path) -> dict:
+    if path.exists():
         try:
-            return json.loads(PR_INTEL_PATH.read_text(encoding="utf8"))
+            return json.loads(path.read_text(encoding="utf8"))
         except Exception:
             return {}
     return {}
+
+
+def priority_for_issue(title: str, body: str, labels: list[str]) -> int:
+    t = f"{title}\n{body or ''}".lower()
+    score = 1
+    label_text = " ".join(labels).lower()
+    if any(k in label_text for k in ["bug", "regression", "high", "p1", "p0"]):
+        score += 2
+    if any(k in t for k in ["crash", "panic", "data loss", "security", "auth bypass", "critical"]):
+        score += 2
+    if any(k in t for k in ["flaky", "intermittent", "sometimes"]):
+        score += 1
+    return min(score, 5)
 
 
 def connect() -> sqlite3.Connection:
@@ -126,22 +140,28 @@ def ingest_openclaw(conn: sqlite3.Connection, limit: int) -> None:
     for item in data:
         if "pull_request" in item:
             continue
-        profile = classify_profile(item.get("title", ""), item.get("body") or "")
+        title = item.get("title", "")
+        body = item.get("body") or ""
+        labels = [l.get("name","") for l in item.get("labels", [])]
+        profile = classify_profile(title, body)
+        priority = priority_for_issue(title, body, labels)
         now = now_iso()
         conn.execute(
             """
             INSERT INTO jobs (id,source_repo,issue_number,title,profile,status,priority,created_at,updated_at)
-            VALUES (?,?,?,?,?,'queued',1,?,?)
+            VALUES (?,?,?,?,?,'queued',?,?,?)
             ON CONFLICT(source_repo,issue_number,profile) DO UPDATE SET
               title=excluded.title,
+              priority=excluded.priority,
               updated_at=excluded.updated_at
             """,
             (
                 f"issue-{item['number']}-{profile}",
                 "openclaw/openclaw",
                 item["number"],
-                item.get("title", ""),
+                title,
                 profile,
+                priority,
                 now,
                 now,
             ),
@@ -238,7 +258,8 @@ def requeue_expired(conn: sqlite3.Connection) -> int:
 
 def render_board(conn: sqlite3.Connection) -> None:
     BOARD_PATH.parent.mkdir(parents=True, exist_ok=True)
-    pr_intel = load_pr_intel()
+    pr_intel = load_json(PR_INTEL_PATH)
+    code_analysis = load_json(CODE_ANALYSIS_PATH)
     counts = conn.execute("SELECT status, count(*) c FROM jobs GROUP BY status").fetchall()
     by_status = {r["status"]: r["c"] for r in counts}
     workers = conn.execute("SELECT id, status, last_seen, profiles_json FROM workers ORDER BY last_seen DESC LIMIT 50").fetchall()
@@ -291,6 +312,18 @@ def render_board(conn: sqlite3.Connection) -> None:
     else:
         lines.append("No PR intelligence artifact found yet.")
 
+    lines += ["", "## Code analysis", ""]
+    if code_analysis:
+        lines.append(f"Repo: `{code_analysis.get('repo','unknown')}`")
+        counts = code_analysis.get("counts", {})
+        lines.append("")
+        lines.append("| Finding Type | Count |")
+        lines.append("|---|---:|")
+        for k, v in sorted(counts.items()):
+            lines.append(f"| {k} | {v} |")
+    else:
+        lines.append("No code analysis artifact found yet.")
+
     BOARD_PATH.write_text("\n".join(lines) + "\n", encoding="utf8")
 
     # Also emit a lightweight HTML dashboard so root URL isn't a directory listing.
@@ -331,7 +364,20 @@ def render_board(conn: sqlite3.Connection) -> None:
     else:
         html += ["<p class='text-zinc-400'>No PR intelligence artifact found yet.</p>"]
 
-    html += ["<p class='mt-6 text-zinc-400'><a class='underline' href='control-plane-board.md'>Markdown board</a> · <a class='underline' href='issue-crossref.md'>Issue cross-reference</a> · <a class='underline' href='pr-intel-board.md'>PR intel board</a></p>", "</div></body></html>"]
+    html += ["<h2 class='text-xl font-semibold mt-8 mb-2'>Code Analysis</h2>"]
+    if code_analysis:
+        counts = code_analysis.get("counts", {})
+        html += [
+            f"<p class='text-zinc-300 mb-3'>Repo: <code>{code_analysis.get('repo','unknown')}</code></p>",
+            "<div class='overflow-x-auto'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Finding Type</th><th class='p-2 text-left'>Count</th></tr></thead><tbody>",
+        ]
+        for k, v in sorted(counts.items()):
+            html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{k}</td><td class='p-2'>{v}</td></tr>")
+        html += ["</tbody></table></div>"]
+    else:
+        html += ["<p class='text-zinc-400'>No code analysis artifact found yet.</p>"]
+
+    html += ["<p class='mt-6 text-zinc-400'><a class='underline' href='control-plane-board.md'>Markdown board</a> · <a class='underline' href='issue-crossref.md'>Issue cross-reference</a> · <a class='underline' href='pr-intel-board.md'>PR intel board</a> · <a class='underline' href='code-analysis-summary.md'>Code analysis summary</a></p>", "</div></body></html>"]
     html_path.write_text("\n".join(html), encoding="utf8")
     print(f"wrote {BOARD_PATH} and {html_path}")
 

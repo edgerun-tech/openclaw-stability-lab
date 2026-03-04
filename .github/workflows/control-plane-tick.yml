@@ -26,10 +26,12 @@ jobs:
         run: python3 scripts/render-pr-intel-board.py
       - name: Build issue cross-reference
         run: python3 scripts/build-crossref.py
+      - name: Build code analysis summary (stability-lab)
+        run: bash ./scripts/run-code-analysis.sh edgerun-tech/openclaw-stability-lab .
       - name: Commit board/state updates
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add orchestrator/state/controlplane.db docs/findings/control-plane-board.md docs/findings/index.html docs/findings/issue-crossref.md docs/findings/pr-intel-board.md
+          git add orchestrator/state/controlplane.db docs/findings/control-plane-board.md docs/findings/index.html docs/findings/issue-crossref.md docs/findings/pr-intel-board.md docs/findings/code-analysis-summary.md
           git commit -m "chore(control-plane): refresh board/state" || exit 0
           git push

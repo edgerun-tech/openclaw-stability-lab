@@ -6,7 +6,7 @@ Repo: `edgerun-tech/openclaw-stability-lab`
 
 | Type | Count |
 |---|---:|
-| dead-code | 43 |
+| dead-code | 44 |
 
 ## Recent findings
 
@@ -40,5 +40,5 @@ Repo: `edgerun-tech/openclaw-stability-lab`
 | dead-code | medium | Possibly dead function: issue_candidates | `{"file": "orchestrator/pr_intel.py", "line": 154, "refCount": 1}` |
 | dead-code | medium | Possibly dead function: issue_campaigns | `{"file": "orchestrator/pr_intel.py", "line": 192, "refCount": 1}` |
 | dead-code | medium | Possibly dead function: main | `{"file": "orchestrator/pr_intel.py", "line": 226, "refCount": 1}` |
-| dead-code | medium | Possibly dead function: load_pr_intel | `{"file": "orchestrator/control_plane.py", "line": 39, "refCount": 1}` |
-| dead-code | medium | Possibly dead function: connect | `{"file": "orchestrator/control_plane.py", "line": 48, "refCount": 1}` |
+| dead-code | medium | Possibly dead function: priority_for_issue | `{"file": "orchestrator/control_plane.py", "line": 49, "refCount": 1}` |
+| dead-code | medium | Possibly dead function: connect | `{"file": "orchestrator/control_plane.py", "line": 62, "refCount": 1}` |

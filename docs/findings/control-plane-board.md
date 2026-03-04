@@ -1,6 +1,6 @@
 # Stability Lab Control Plane Board
 
-Generated: 2026-03-04T10:18:14.495823+00:00
+Generated: 2026-03-04T10:47:19.927687+00:00
 
 ## Job status
 
@@ -32,3 +32,11 @@ Open PRs: **30** | Open issues: **4**
 | Campaign | Category | Tier | Policy | Confidence | Issues |
 |---|---|---|---|---:|---|
 | bug-batch-4 | bug | medium | suggest | 0.667 | #34286, #34294, #34292, #34271 |
+
+## Code analysis
+
+Repo: `edgerun-tech/openclaw-stability-lab`
+
+| Finding Type | Count |
+|---|---:|
+| dead-code | 44 |
