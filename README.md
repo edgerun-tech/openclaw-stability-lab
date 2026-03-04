@@ -29,6 +29,9 @@ Control plane docs:
 - `docs/CODESPACE_CONTROL_PLANE.md`
 - `docs/WORKER_ONBOARDING.md`
 - `docs/EVIDENCE_POLICY.md`
+- `docs/findings/issue-crossref.md`
+- `docs/WORKER_ONBOARDING.md`
+- `docs/EVIDENCE_POLICY.md`
 
 Live artifacts (committed by control-plane tick):
 
