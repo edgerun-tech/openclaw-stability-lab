@@ -1,38 +1,59 @@
 # Stability Lab Control Plane Board
 
-Generated: 2026-03-04T07:54:55.398921+00:00
+Generated: 2026-03-04T10:54:35.547380+00:00
 
 ## Job status
 
 | Status | Count |
 |---|---:|
-| queued | 19 |
-| running | 1 |
+| queued | 0 |
+| running | 0 |
 | done | 0 |
 | failed | 0 |
 | needs-info | 0 |
 
+## Focus queue (top impact)
+
+| Rank | Issue | Profile | Priority | Campaign Boost | Score |
+|---:|---:|---|---:|---|---:|
+
+## Workers
+
+| Worker | Status | Last Seen | Profiles |
+|---|---|---|---|
+
 ## Recent results
 
-| Issue | Profile | Job Status | Verdict | Commit | When |
-|---:|---|---|---|---|---|
-| 34134 | protocol-transport | running |  |  |  |
-| 34059 | protocol-transport | queued |  |  |  |
-| 34061 | gateway-lifecycle | queued |  |  |  |
-| 34062 | protocol-transport | queued |  |  |  |
-| 34063 | protocol-transport | queued |  |  |  |
-| 34064 | channel-delivery | queued |  |  |  |
-| 34065 | protocol-transport | queued |  |  |  |
-| 34072 | protocol-transport | queued |  |  |  |
-| 34089 | gateway-lifecycle | queued |  |  |  |
-| 34092 | protocol-transport | queued |  |  |  |
-| 34093 | channel-delivery | queued |  |  |  |
-| 34097 | protocol-transport | queued |  |  |  |
-| 34098 | protocol-transport | queued |  |  |  |
-| 34105 | channel-delivery | queued |  |  |  |
-| 34108 | channel-delivery | queued |  |  |  |
-| 34111 | protocol-transport | queued |  |  |  |
-| 34114 | protocol-transport | queued |  |  |  |
-| 34117 | gateway-lifecycle | queued |  |  |  |
-| 34124 | protocol-transport | queued |  |  |  |
-| 34129 | gateway-lifecycle | queued |  |  |  |
+| Issue | Profile | Job Status | Verdict | Runner | Commit | When | Report | Logs |
+|---:|---|---|---|---|---|---|---|---|
+
+## PR intelligence
+
+Source repo: `openclaw/openclaw`
+Open PRs: **30** | Open issues: **4**
+
+### Top campaigns
+
+| Campaign | Category | Tier | Policy | Confidence | Issues |
+|---|---|---|---|---:|---|
+| bug-batch-4 | bug | medium | suggest | 0.667 | #34286, #34294, #34292, #34271 |
+
+## PR build + static checks
+
+Repo: `openclaw/openclaw`
+
+| PR | Files | Languages | Check Mode |
+|---:|---:|---|---|
+| 34323 | 2 | typescript:2 | diff-only |
+| 34322 | 2 | typescript:2 | diff-only |
+| 34321 | 5 | typescript:5 | diff-only |
+| 34320 | 1 | typescript:1 | diff-only |
+| 34319 | 38 | markdown:38 | diff-only |
+
+## Code analysis
+
+Repo: `edgerun-tech/openclaw-stability-lab`
+
+| Finding Type | Count |
+|---|---:|
+| dead-code | 44 |

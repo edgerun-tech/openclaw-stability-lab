@@ -26,14 +26,18 @@ See `CONTRIBUTING.md` and `profiles/`.
 Control plane docs:
 
 - `orchestrator/ARCHITECTURE.md`
-- `docs/CODESPACE_CONTROL_PLANE.md`
+- `docs/DEPLOY_VPS.md`
 - `docs/WORKER_ONBOARDING.md`
 - `docs/EVIDENCE_POLICY.md`
+- `docs/PR_INTELLIGENCE_V1.md`
+- `docs/PR_BUILD_PIPELINE.md`
+- `docs/CODE_ANALYSIS_PIPELINE.md`
 - `docs/findings/issue-crossref.md`
-- `docs/WORKER_ONBOARDING.md`
-- `docs/EVIDENCE_POLICY.md`
 
 Live artifacts (committed by control-plane tick):
 
 - `docs/findings/control-plane-board.md`
 - `docs/findings/issue-crossref.md`
+- `docs/findings/pr-intel-board.md`
+- `docs/findings/pr-build-report.md`
+- `docs/findings/code-analysis-summary.md`

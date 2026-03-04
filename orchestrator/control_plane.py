@@ -14,8 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = ROOT / "orchestrator" / "state"
 DB_PATH = STATE_DIR / "controlplane.db"
 BOARD_PATH = ROOT / "docs" / "findings" / "control-plane-board.md"
-
-
+PR_INTEL_PATH = ROOT / "orchestrator" / "state" / "pr-intel.json"
+CODE_ANALYSIS_PATH = ROOT / "orchestrator" / "state" / "code-analysis.json"
+PR_BUILD_PATH = ROOT / "orchestrator" / "state" / "pr-build-report.json"
 
 
 def worker_alias(worker_id: str) -> str:
@@ -35,6 +36,28 @@ def display_path(path: str | None) -> str:
 
 def now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def load_json(path: Path) -> dict:
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def priority_for_issue(title: str, body: str, labels: list[str]) -> int:
+    t = f"{title}\n{body or ''}".lower()
+    score = 1
+    label_text = " ".join(labels).lower()
+    if any(k in label_text for k in ["bug", "regression", "high", "p1", "p0"]):
+        score += 2
+    if any(k in t for k in ["crash", "panic", "data loss", "security", "auth bypass", "critical"]):
+        score += 2
+    if any(k in t for k in ["flaky", "intermittent", "sometimes"]):
+        score += 1
+    return min(score, 5)
 
 
 def connect() -> sqlite3.Connection:
@@ -118,22 +141,28 @@ def ingest_openclaw(conn: sqlite3.Connection, limit: int) -> None:
     for item in data:
         if "pull_request" in item:
             continue
-        profile = classify_profile(item.get("title", ""), item.get("body") or "")
+        title = item.get("title", "")
+        body = item.get("body") or ""
+        labels = [l.get("name","") for l in item.get("labels", [])]
+        profile = classify_profile(title, body)
+        priority = priority_for_issue(title, body, labels)
         now = now_iso()
         conn.execute(
             """
             INSERT INTO jobs (id,source_repo,issue_number,title,profile,status,priority,created_at,updated_at)
-            VALUES (?,?,?,?,?,'queued',1,?,?)
+            VALUES (?,?,?,?,?,'queued',?,?,?)
             ON CONFLICT(source_repo,issue_number,profile) DO UPDATE SET
               title=excluded.title,
+              priority=excluded.priority,
               updated_at=excluded.updated_at
             """,
             (
                 f"issue-{item['number']}-{profile}",
                 "openclaw/openclaw",
                 item["number"],
-                item.get("title", ""),
+                title,
                 profile,
+                priority,
                 now,
                 now,
             ),
@@ -228,8 +257,22 @@ def requeue_expired(conn: sqlite3.Connection) -> int:
     return len(rows)
 
 
+def build_focus_issue_set(pr_intel: dict) -> set[int]:
+    out: set[int] = set()
+    for c in pr_intel.get("campaigns", [])[:20]:
+        for n in c.get("issues", []):
+            try:
+                out.add(int(n))
+            except Exception:
+                pass
+    return out
+
+
 def render_board(conn: sqlite3.Connection) -> None:
     BOARD_PATH.parent.mkdir(parents=True, exist_ok=True)
+    pr_intel = load_json(PR_INTEL_PATH)
+    code_analysis = load_json(CODE_ANALYSIS_PATH)
+    pr_build = load_json(PR_BUILD_PATH)
     counts = conn.execute("SELECT status, count(*) c FROM jobs GROUP BY status").fetchall()
     by_status = {r["status"]: r["c"] for r in counts}
     workers = conn.execute("SELECT id, status, last_seen, profiles_json FROM workers ORDER BY last_seen DESC LIMIT 50").fetchall()
@@ -242,6 +285,34 @@ def render_board(conn: sqlite3.Connection) -> None:
         LIMIT 80
         """
     ).fetchall()
+
+    queued = conn.execute(
+        """
+        SELECT issue_number, profile, priority, updated_at
+        FROM jobs
+        WHERE status='queued'
+        ORDER BY priority DESC, updated_at ASC
+        LIMIT 300
+        """
+    ).fetchall()
+
+    focus_issues = build_focus_issue_set(pr_intel)
+    focus_queue = []
+    for q in queued:
+        base = int(q["priority"] or 1)
+        campaign_boost = 2 if int(q["issue_number"]) in focus_issues else 0
+        score = base + campaign_boost
+        focus_queue.append(
+            {
+                "issue": int(q["issue_number"]),
+                "profile": q["profile"],
+                "priority": base,
+                "campaign": campaign_boost > 0,
+                "score": score,
+                "updatedAt": q["updated_at"],
+            }
+        )
+    focus_queue.sort(key=lambda x: (x["score"], x["priority"]), reverse=True)
 
     generated = now_iso()
     lines = [
@@ -257,6 +328,10 @@ def render_board(conn: sqlite3.Connection) -> None:
     for s in ["queued", "running", "done", "failed", "needs-info"]:
         lines.append(f"| {s} | {by_status.get(s,0)} |")
 
+    lines += ["", "## Focus queue (top impact)", "", "| Rank | Issue | Profile | Priority | Campaign Boost | Score |", "|---:|---:|---|---:|---|---:|"]
+    for idx, q in enumerate(focus_queue[:20], start=1):
+        lines.append(f"| {idx} | {q['issue']} | {q['profile']} | {q['priority']} | {'yes' if q['campaign'] else 'no'} | {q['score']} |")
+
     lines += ["", "## Workers", "", "| Worker | Status | Last Seen | Profiles |", "|---|---|---|---|"]
     for w in workers:
         lines.append(f"| {worker_alias(w['id'])} | {w['status']} | {w['last_seen']} | {w['profiles_json']} |")
@@ -266,6 +341,46 @@ def render_board(conn: sqlite3.Connection) -> None:
         lines.append(
             f"| {r['issue_number']} | {r['profile']} | {r['status']} | {r['verdict'] or ''} | {worker_alias(r['runner_id'] or 'unknown')} | {(r['commit_sha'] or '')[:10]} | {r['created_at'] or ''} | {display_path(r['report_path'])} | {display_path(r['logs_path'])} |"
         )
+
+    lines += ["", "## PR intelligence", ""]
+    if pr_intel:
+        lines.append(f"Source repo: `{pr_intel.get('repo', 'unknown')}`")
+        lines.append(f"Open PRs: **{pr_intel.get('openPulls', 0)}** | Open issues: **{pr_intel.get('openIssues', 0)}**")
+        lines.append("")
+        lines.append("### Top campaigns")
+        lines.append("")
+        lines.append("| Campaign | Category | Tier | Policy | Confidence | Issues |")
+        lines.append("|---|---|---|---|---:|---|")
+        for c in pr_intel.get("campaigns", [])[:10]:
+            issues = ", ".join(f"#{n}" for n in c.get("issues", []))
+            lines.append(f"| {c.get('campaignId','')} | {c.get('category','')} | {c.get('tier','')} | {c.get('policy','')} | {c.get('confidence',0)} | {issues} |")
+    else:
+        lines.append("No PR intelligence artifact found yet.")
+
+    lines += ["", "## PR build + static checks", ""]
+    if pr_build:
+        lines.append(f"Repo: `{pr_build.get('repo','unknown')}`")
+        lines.append("")
+        lines.append("| PR | Files | Languages | Check Mode |")
+        lines.append("|---:|---:|---|---|")
+        for pr in pr_build.get("pullRequests", [])[:12]:
+            langs = pr.get("languageBreakdown", {})
+            lang_text = ", ".join(f"{k}:{v}" for k, v in sorted(langs.items(), key=lambda x: x[1], reverse=True)[:4])
+            lines.append(f"| {pr.get('number','')} | {pr.get('changedFiles',0)} | {lang_text} | {pr.get('checks',{}).get('mode','diff-only')} |")
+    else:
+        lines.append("No PR build/check artifact found yet.")
+
+    lines += ["", "## Code analysis", ""]
+    if code_analysis:
+        lines.append(f"Repo: `{code_analysis.get('repo','unknown')}`")
+        counts = code_analysis.get("counts", {})
+        lines.append("")
+        lines.append("| Finding Type | Count |")
+        lines.append("|---|---:|")
+        for k, v in sorted(counts.items()):
+            lines.append(f"| {k} | {v} |")
+    else:
+        lines.append("No code analysis artifact found yet.")
 
     BOARD_PATH.write_text("\n".join(lines) + "\n", encoding="utf8")
 
@@ -281,15 +396,64 @@ def render_board(conn: sqlite3.Connection) -> None:
         "<h1 class='text-2xl font-bold mb-2'>OpenClaw Stability Dashboard</h1>",
         f"<p class='text-zinc-400 mb-4'><b>Generated:</b> {generated}</p>",
         "<div class='grid grid-cols-2 md:grid-cols-5 gap-3 mb-8'>" + "".join([f"<div class='rounded-xl border border-zinc-800 bg-zinc-900 p-3'><div class='text-zinc-400 text-xs uppercase'>{k}</div><div class='text-2xl font-semibold'>{by_status.get(k,0)}</div></div>" for k in ["queued","running","done","failed","needs-info"]]) + "</div>",
-        "<h2 class='text-xl font-semibold mb-2'>Workers</h2>",
+        "<h2 class='text-xl font-semibold mb-2'>Focus Queue (Top Impact)</h2>",
+        "<div class='overflow-x-auto mb-8'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Rank</th><th class='p-2 text-left'>Issue</th><th class='p-2 text-left'>Profile</th><th class='p-2 text-left'>Priority</th><th class='p-2 text-left'>Campaign</th><th class='p-2 text-left'>Score</th></tr></thead><tbody>",
         "<div class='overflow-x-auto mb-8'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Worker</th><th class='p-2 text-left'>Status</th><th class='p-2 text-left'>Last Seen</th><th class='p-2 text-left'>Profiles</th></tr></thead><tbody>",
     ]
+    for idx, q in enumerate(focus_queue[:20], start=1):
+        html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{idx}</td><td class='p-2'>#{q['issue']}</td><td class='p-2'>{q['profile']}</td><td class='p-2'>{q['priority']}</td><td class='p-2'>{'yes' if q['campaign'] else 'no'}</td><td class='p-2'>{q['score']}</td></tr>")
+    html += ["</tbody></table></div>", "<h2 class='text-xl font-semibold mb-2'>Workers</h2>", "<div class='overflow-x-auto mb-8'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Worker</th><th class='p-2 text-left'>Status</th><th class='p-2 text-left'>Last Seen</th><th class='p-2 text-left'>Profiles</th></tr></thead><tbody>"]
     for w in workers:
         html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{worker_alias(w['id'])}</td><td class='p-2'>{w['status']}</td><td class='p-2'>{w['last_seen']}</td><td class='p-2'><code>{w['profiles_json']}</code></td></tr>")
     html += ["</tbody></table></div>", "<h2 class='text-xl font-semibold mb-2'>Recent Results</h2>", "<div class='overflow-x-auto'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Issue</th><th class='p-2 text-left'>Profile</th><th class='p-2 text-left'>Status</th><th class='p-2 text-left'>Verdict</th><th class='p-2 text-left'>Runner</th><th class='p-2 text-left'>Commit</th><th class='p-2 text-left'>When</th><th class='p-2 text-left'>Report</th><th class='p-2 text-left'>Logs</th></tr></thead><tbody>"]
     for r in latest:
         html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{r['issue_number']}</td><td class='p-2'>{r['profile']}</td><td class='p-2'>{r['status']}</td><td class='p-2'>{r['verdict'] or ''}</td><td class='p-2'>{worker_alias(r['runner_id'] or 'unknown')}</td><td class='p-2'>{(r['commit_sha'] or '')[:10]}</td><td class='p-2'>{r['created_at'] or ''}</td><td class='p-2'>{display_path(r['report_path'])}</td><td class='p-2'>{display_path(r['logs_path'])}</td></tr>")
-    html += ["</tbody></table></div>", "<p class='mt-6 text-zinc-400'><a class='underline' href='control-plane-board.md'>Markdown board</a> · <a class='underline' href='issue-crossref.md'>Issue cross-reference</a></p>", "</div></body></html>"]
+    html += ["</tbody></table></div>"]
+
+    html += ["<h2 class='text-xl font-semibold mt-8 mb-2'>PR Intelligence</h2>"]
+    if pr_intel:
+        html += [
+            "<div class='grid grid-cols-1 md:grid-cols-2 gap-3 mb-4'>",
+            f"<div class='rounded-xl border border-zinc-800 bg-zinc-900 p-3'><div class='text-zinc-400 text-xs uppercase'>Repo</div><div class='text-base font-semibold'>{pr_intel.get('repo','unknown')}</div></div>",
+            f"<div class='rounded-xl border border-zinc-800 bg-zinc-900 p-3'><div class='text-zinc-400 text-xs uppercase'>Open PRs / Open Issues</div><div class='text-base font-semibold'>{pr_intel.get('openPulls',0)} / {pr_intel.get('openIssues',0)}</div></div>",
+            "</div>",
+            "<div class='overflow-x-auto'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Campaign</th><th class='p-2 text-left'>Category</th><th class='p-2 text-left'>Tier</th><th class='p-2 text-left'>Policy</th><th class='p-2 text-left'>Confidence</th><th class='p-2 text-left'>Issues</th></tr></thead><tbody>",
+        ]
+        for c in pr_intel.get("campaigns", [])[:10]:
+            issues = ", ".join(f"#{n}" for n in c.get("issues", []))
+            html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{c.get('campaignId','')}</td><td class='p-2'>{c.get('category','')}</td><td class='p-2'>{c.get('tier','')}</td><td class='p-2'>{c.get('policy','')}</td><td class='p-2'>{c.get('confidence',0)}</td><td class='p-2'>{issues}</td></tr>")
+        html += ["</tbody></table></div>"]
+    else:
+        html += ["<p class='text-zinc-400'>No PR intelligence artifact found yet.</p>"]
+
+    html += ["<h2 class='text-xl font-semibold mt-8 mb-2'>PR Build + Static Checks</h2>"]
+    if pr_build:
+        html += [
+            f"<p class='text-zinc-300 mb-3'>Repo: <code>{pr_build.get('repo','unknown')}</code></p>",
+            "<div class='overflow-x-auto mb-6'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>PR</th><th class='p-2 text-left'>Files</th><th class='p-2 text-left'>Languages</th><th class='p-2 text-left'>Check Mode</th></tr></thead><tbody>",
+        ]
+        for pr in pr_build.get("pullRequests", [])[:12]:
+            langs = pr.get("languageBreakdown", {})
+            lang_text = ", ".join(f"{k}:{v}" for k, v in sorted(langs.items(), key=lambda x: x[1], reverse=True)[:4])
+            html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>#{pr.get('number','')}</td><td class='p-2'>{pr.get('changedFiles',0)}</td><td class='p-2'>{lang_text}</td><td class='p-2'>{pr.get('checks',{}).get('mode','diff-only')}</td></tr>")
+        html += ["</tbody></table></div>"]
+    else:
+        html += ["<p class='text-zinc-400'>No PR build/check artifact found yet.</p>"]
+
+    html += ["<h2 class='text-xl font-semibold mt-8 mb-2'>Code Analysis</h2>"]
+    if code_analysis:
+        counts = code_analysis.get("counts", {})
+        html += [
+            f"<p class='text-zinc-300 mb-3'>Repo: <code>{code_analysis.get('repo','unknown')}</code></p>",
+            "<div class='overflow-x-auto'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Finding Type</th><th class='p-2 text-left'>Count</th></tr></thead><tbody>",
+        ]
+        for k, v in sorted(counts.items()):
+            html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{k}</td><td class='p-2'>{v}</td></tr>")
+        html += ["</tbody></table></div>"]
+    else:
+        html += ["<p class='text-zinc-400'>No code analysis artifact found yet.</p>"]
+
+    html += ["<p class='mt-6 text-zinc-400'><a class='underline' href='control-plane-board.md'>Markdown board</a> · <a class='underline' href='issue-crossref.md'>Issue cross-reference</a> · <a class='underline' href='pr-intel-board.md'>PR intel board</a> · <a class='underline' href='pr-build-report.md'>PR build report</a> · <a class='underline' href='code-analysis-summary.md'>Code analysis summary</a></p>", "</div></body></html>"]
     html_path.write_text("\n".join(html), encoding="utf8")
     print(f"wrote {BOARD_PATH} and {html_path}")
 
