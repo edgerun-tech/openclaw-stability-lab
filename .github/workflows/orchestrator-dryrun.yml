@@ -1,0 +1,20 @@
+name: orchestrator-dryrun
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 */6 * * *'
+
+jobs:
+  ingest-schedule:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ingest issues
+        run: python3 orchestrator/ingest_github.py
+      - name: Schedule
+        run: python3 orchestrator/schedule.py
+      - name: Upload state
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestrator-state
+          path: orchestrator/state/
