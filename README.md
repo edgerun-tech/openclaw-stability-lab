@@ -26,7 +26,7 @@ See `CONTRIBUTING.md` and `profiles/`.
 Control plane docs:
 
 - `orchestrator/ARCHITECTURE.md`
-- `docs/CODESPACE_CONTROL_PLANE.md`
+- `docs/DEPLOY_VPS.md`
 - `docs/WORKER_ONBOARDING.md`
 - `docs/EVIDENCE_POLICY.md`
 - `docs/PR_INTELLIGENCE_V1.md`
