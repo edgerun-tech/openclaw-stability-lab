@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["issue", "repo", "commit", "profile", "verdict", "startedAt", "endedAt"],
+  "properties": {
+    "issue": {"type": "integer"},
+    "repo": {"type": "string"},
+    "commit": {"type": "string"},
+    "profile": {"type": "string"},
+    "verdict": {"enum": ["reproducible", "not-reproducible", "needs-more-info", "duplicate/superseded"]},
+    "startedAt": {"type": "string"},
+    "endedAt": {"type": "string"},
+    "notes": {"type": "string"},
+    "artifacts": {"type": "array", "items": {"type": "string"}}
+  }
+}

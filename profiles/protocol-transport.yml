@@ -1,0 +1,4 @@
+name: protocol-transport
+commands:
+  - pnpm protocol:check
+  - pnpm exec vitest run src/gateway/server.ios-client-id.test.ts src/gateway/call.test.ts src/gateway/probe.test.ts

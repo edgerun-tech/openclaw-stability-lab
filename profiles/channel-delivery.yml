@@ -1,0 +1,3 @@
+name: channel-delivery
+commands:
+  - pnpm exec vitest run src/gateway/server.chat.gateway-server-chat-b.test.ts src/gateway/channel-health-monitor.test.ts

@@ -1,0 +1,3 @@
+name: gateway-lifecycle
+commands:
+  - pnpm exec vitest run src/gateway/server-restart-deferral.test.ts src/gateway/channel-health-policy.test.ts
