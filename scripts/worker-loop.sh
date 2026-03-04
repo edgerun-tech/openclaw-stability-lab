@@ -14,30 +14,15 @@ python3 orchestrator/control_plane.py register-worker --worker "$WORKER_ID" --pr
 while true; do
   python3 orchestrator/control_plane.py requeue-expired >/dev/null
   JOB_JSON=$(python3 orchestrator/control_plane.py claim-job --worker "$WORKER_ID" --lease-seconds 1800)
-  JOB_ID=$(python3 - <<'PY'
-import json,sys
-obj=json.loads(sys.stdin.read() or '{}')
-print(obj.get('id',''))
-PY
-<<< "$JOB_JSON")
+  JOB_ID=$(python3 -c 'import json,sys; obj=json.loads(sys.argv[1] if len(sys.argv)>1 and sys.argv[1] else "{}"); print(obj.get("id", ""))' "$JOB_JSON")
 
   if [[ -z "$JOB_ID" ]]; then
     sleep "$SLEEP_SECS"
     continue
   fi
 
-  ISSUE=$(python3 - <<'PY'
-import json,sys
-obj=json.loads(sys.stdin.read())
-print(obj.get('issue_number',''))
-PY
-<<< "$JOB_JSON")
-  PROFILE=$(python3 - <<'PY'
-import json,sys
-obj=json.loads(sys.stdin.read())
-print(obj.get('profile',''))
-PY
-<<< "$JOB_JSON")
+  ISSUE=$(python3 -c 'import json,sys; obj=json.loads(sys.argv[1]); print(obj.get("issue_number", ""))' "$JOB_JSON")
+  PROFILE=$(python3 -c 'import json,sys; obj=json.loads(sys.argv[1]); print(obj.get("profile", ""))' "$JOB_JSON")
 
   TS=$(date +%Y%m%d-%H%M%S)
   LOG_DIR="$BASE/reports/worker-${WORKER_ID}-${ISSUE}-${TS}"
