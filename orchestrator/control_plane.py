@@ -214,20 +214,22 @@ def render_board(conn: sqlite3.Connection) -> None:
     BOARD_PATH.parent.mkdir(parents=True, exist_ok=True)
     counts = conn.execute("SELECT status, count(*) c FROM jobs GROUP BY status").fetchall()
     by_status = {r["status"]: r["c"] for r in counts}
+    workers = conn.execute("SELECT id, status, last_seen, profiles_json FROM workers ORDER BY last_seen DESC LIMIT 50").fetchall()
     latest = conn.execute(
         """
-        SELECT j.issue_number,j.profile,j.status,r.verdict,r.commit_sha,r.created_at
+        SELECT j.issue_number,j.profile,j.status,r.verdict,r.commit_sha,r.created_at,r.runner_id,r.report_path,r.logs_path
         FROM jobs j
         LEFT JOIN results r ON r.job_id=j.id
         ORDER BY COALESCE(r.created_at,j.updated_at) DESC
-        LIMIT 40
+        LIMIT 80
         """
     ).fetchall()
 
+    generated = now_iso()
     lines = [
         "# Stability Lab Control Plane Board",
         "",
-        f"Generated: {now_iso()}",
+        f"Generated: {generated}",
         "",
         "## Job status",
         "",
@@ -236,14 +238,42 @@ def render_board(conn: sqlite3.Connection) -> None:
     ]
     for s in ["queued", "running", "done", "failed", "needs-info"]:
         lines.append(f"| {s} | {by_status.get(s,0)} |")
-    lines += ["", "## Recent results", "", "| Issue | Profile | Job Status | Verdict | Commit | When |", "|---:|---|---|---|---|---|"]
+
+    lines += ["", "## Workers", "", "| Worker | Status | Last Seen | Profiles |", "|---|---|---|---|"]
+    for w in workers:
+        lines.append(f"| {w['id']} | {w['status']} | {w['last_seen']} | {w['profiles_json']} |")
+
+    lines += ["", "## Recent results", "", "| Issue | Profile | Job Status | Verdict | Runner | Commit | When | Report | Logs |", "|---:|---|---|---|---|---|---|---|---|"]
     for r in latest:
         lines.append(
-            f"| {r['issue_number']} | {r['profile']} | {r['status']} | {r['verdict'] or ''} | {(r['commit_sha'] or '')[:10]} | {r['created_at'] or ''} |"
+            f"| {r['issue_number']} | {r['profile']} | {r['status']} | {r['verdict'] or ''} | {r['runner_id'] or ''} | {(r['commit_sha'] or '')[:10]} | {r['created_at'] or ''} | {r['report_path'] or ''} | {r['logs_path'] or ''} |"
         )
 
     BOARD_PATH.write_text("\n".join(lines) + "\n", encoding="utf8")
-    print(f"wrote {BOARD_PATH}")
+
+    # Also emit a lightweight HTML dashboard so root URL isn't a directory listing.
+    html_path = BOARD_PATH.parent / "index.html"
+    html = [
+        "<!doctype html>",
+        "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>",
+        "<title>OpenClaw Stability Dashboard</title>",
+        "<style>body{font-family:system-ui,Arial,sans-serif;max-width:1200px;margin:2rem auto;padding:0 1rem;} table{border-collapse:collapse;width:100%;font-size:14px;} th,td{border:1px solid #ddd;padding:.4rem;vertical-align:top;} th{background:#f5f5f5;text-align:left;} .cards{display:flex;gap:.75rem;flex-wrap:wrap;margin:1rem 0;} .card{border:1px solid #ddd;border-radius:8px;padding:.6rem .9rem;min-width:120px;} code{background:#f6f8fa;padding:.1rem .3rem;border-radius:4px;}</style>",
+        "</head><body>",
+        "<h1>OpenClaw Stability Dashboard</h1>",
+        f"<p><b>Generated:</b> {generated}</p>",
+        "<div class='cards'>" + "".join([f"<div class='card'><b>{k}</b><div>{by_status.get(k,0)}</div></div>" for k in ["queued","running","done","failed","needs-info"]]) + "</div>",
+        "<h2>Workers</h2>",
+        "<table><thead><tr><th>Worker</th><th>Status</th><th>Last Seen</th><th>Profiles</th></tr></thead><tbody>",
+    ]
+    for w in workers:
+        html.append(f"<tr><td>{w['id']}</td><td>{w['status']}</td><td>{w['last_seen']}</td><td><code>{w['profiles_json']}</code></td></tr>")
+    html += ["</tbody></table>", "<h2>Recent Results</h2>", "<table><thead><tr><th>Issue</th><th>Profile</th><th>Status</th><th>Verdict</th><th>Runner</th><th>Commit</th><th>When</th><th>Report</th><th>Logs</th></tr></thead><tbody>"]
+    for r in latest:
+        html.append(f"<tr><td>{r['issue_number']}</td><td>{r['profile']}</td><td>{r['status']}</td><td>{r['verdict'] or ''}</td><td>{r['runner_id'] or ''}</td><td>{(r['commit_sha'] or '')[:10]}</td><td>{r['created_at'] or ''}</td><td>{r['report_path'] or ''}</td><td>{r['logs_path'] or ''}</td></tr>")
+    html += ["</tbody></table>", "<p><a href='control-plane-board.md'>Markdown board</a> · <a href='issue-crossref.md'>Issue cross-reference</a></p>", "</body></html>"]
+    html_path.write_text("
+".join(html), encoding="utf8")
+    print(f"wrote {BOARD_PATH} and {html_path}")
 
 
 def main():
