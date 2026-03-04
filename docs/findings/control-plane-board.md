@@ -1,6 +1,6 @@
 # Stability Lab Control Plane Board
 
-Generated: 2026-03-04T10:47:19.927687+00:00
+Generated: 2026-03-04T10:50:16.224819+00:00
 
 ## Job status
 
@@ -11,6 +11,11 @@ Generated: 2026-03-04T10:47:19.927687+00:00
 | done | 0 |
 | failed | 0 |
 | needs-info | 0 |
+
+## Focus queue (top impact)
+
+| Rank | Issue | Profile | Priority | Campaign Boost | Score |
+|---:|---:|---|---:|---|---:|
 
 ## Workers
 

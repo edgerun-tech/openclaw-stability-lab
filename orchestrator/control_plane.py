@@ -256,6 +256,17 @@ def requeue_expired(conn: sqlite3.Connection) -> int:
     return len(rows)
 
 
+def build_focus_issue_set(pr_intel: dict) -> set[int]:
+    out: set[int] = set()
+    for c in pr_intel.get("campaigns", [])[:20]:
+        for n in c.get("issues", []):
+            try:
+                out.add(int(n))
+            except Exception:
+                pass
+    return out
+
+
 def render_board(conn: sqlite3.Connection) -> None:
     BOARD_PATH.parent.mkdir(parents=True, exist_ok=True)
     pr_intel = load_json(PR_INTEL_PATH)
@@ -273,6 +284,34 @@ def render_board(conn: sqlite3.Connection) -> None:
         """
     ).fetchall()
 
+    queued = conn.execute(
+        """
+        SELECT issue_number, profile, priority, updated_at
+        FROM jobs
+        WHERE status='queued'
+        ORDER BY priority DESC, updated_at ASC
+        LIMIT 300
+        """
+    ).fetchall()
+
+    focus_issues = build_focus_issue_set(pr_intel)
+    focus_queue = []
+    for q in queued:
+        base = int(q["priority"] or 1)
+        campaign_boost = 2 if int(q["issue_number"]) in focus_issues else 0
+        score = base + campaign_boost
+        focus_queue.append(
+            {
+                "issue": int(q["issue_number"]),
+                "profile": q["profile"],
+                "priority": base,
+                "campaign": campaign_boost > 0,
+                "score": score,
+                "updatedAt": q["updated_at"],
+            }
+        )
+    focus_queue.sort(key=lambda x: (x["score"], x["priority"]), reverse=True)
+
     generated = now_iso()
     lines = [
         "# Stability Lab Control Plane Board",
@@ -286,6 +325,10 @@ def render_board(conn: sqlite3.Connection) -> None:
     ]
     for s in ["queued", "running", "done", "failed", "needs-info"]:
         lines.append(f"| {s} | {by_status.get(s,0)} |")
+
+    lines += ["", "## Focus queue (top impact)", "", "| Rank | Issue | Profile | Priority | Campaign Boost | Score |", "|---:|---:|---|---:|---|---:|"]
+    for idx, q in enumerate(focus_queue[:20], start=1):
+        lines.append(f"| {idx} | {q['issue']} | {q['profile']} | {q['priority']} | {'yes' if q['campaign'] else 'no'} | {q['score']} |")
 
     lines += ["", "## Workers", "", "| Worker | Status | Last Seen | Profiles |", "|---|---|---|---|"]
     for w in workers:
@@ -338,9 +381,13 @@ def render_board(conn: sqlite3.Connection) -> None:
         "<h1 class='text-2xl font-bold mb-2'>OpenClaw Stability Dashboard</h1>",
         f"<p class='text-zinc-400 mb-4'><b>Generated:</b> {generated}</p>",
         "<div class='grid grid-cols-2 md:grid-cols-5 gap-3 mb-8'>" + "".join([f"<div class='rounded-xl border border-zinc-800 bg-zinc-900 p-3'><div class='text-zinc-400 text-xs uppercase'>{k}</div><div class='text-2xl font-semibold'>{by_status.get(k,0)}</div></div>" for k in ["queued","running","done","failed","needs-info"]]) + "</div>",
-        "<h2 class='text-xl font-semibold mb-2'>Workers</h2>",
+        "<h2 class='text-xl font-semibold mb-2'>Focus Queue (Top Impact)</h2>",
+        "<div class='overflow-x-auto mb-8'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Rank</th><th class='p-2 text-left'>Issue</th><th class='p-2 text-left'>Profile</th><th class='p-2 text-left'>Priority</th><th class='p-2 text-left'>Campaign</th><th class='p-2 text-left'>Score</th></tr></thead><tbody>",
         "<div class='overflow-x-auto mb-8'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Worker</th><th class='p-2 text-left'>Status</th><th class='p-2 text-left'>Last Seen</th><th class='p-2 text-left'>Profiles</th></tr></thead><tbody>",
     ]
+    for idx, q in enumerate(focus_queue[:20], start=1):
+        html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{idx}</td><td class='p-2'>#{q['issue']}</td><td class='p-2'>{q['profile']}</td><td class='p-2'>{q['priority']}</td><td class='p-2'>{'yes' if q['campaign'] else 'no'}</td><td class='p-2'>{q['score']}</td></tr>")
+    html += ["</tbody></table></div>", "<h2 class='text-xl font-semibold mb-2'>Workers</h2>", "<div class='overflow-x-auto mb-8'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Worker</th><th class='p-2 text-left'>Status</th><th class='p-2 text-left'>Last Seen</th><th class='p-2 text-left'>Profiles</th></tr></thead><tbody>"]
     for w in workers:
         html.append(f"<tr class='border-t border-zinc-800'><td class='p-2'>{worker_alias(w['id'])}</td><td class='p-2'>{w['status']}</td><td class='p-2'>{w['last_seen']}</td><td class='p-2'><code>{w['profiles_json']}</code></td></tr>")
     html += ["</tbody></table></div>", "<h2 class='text-xl font-semibold mb-2'>Recent Results</h2>", "<div class='overflow-x-auto'><table class='min-w-full text-sm border border-zinc-800'><thead class='bg-zinc-900'><tr><th class='p-2 text-left'>Issue</th><th class='p-2 text-left'>Profile</th><th class='p-2 text-left'>Status</th><th class='p-2 text-left'>Verdict</th><th class='p-2 text-left'>Runner</th><th class='p-2 text-left'>Commit</th><th class='p-2 text-left'>When</th><th class='p-2 text-left'>Report</th><th class='p-2 text-left'>Logs</th></tr></thead><tbody>"]
